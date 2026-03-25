@@ -61,7 +61,7 @@
             const imgBlob = await new Promise(res => canvas.getElement().toBlob(res, 'image/jpeg'));
             
             // ส่งไป Hugging Face แบบ Binary
-            const resp = await fetch("https://api-inference.huggingface.co/models/runwayml/stable-diffusion-inpainting", {
+            const resp = await fetch("https://api-inference.huggingface.co/models/ghoskno/Coloring_Inpaint", {
                 headers: { "Authorization": "Bearer " + HF_TOKEN },
                 method: "POST",
                 body: imgBlob
