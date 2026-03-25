@@ -3,26 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Cleaner</title>
+    <title>AI Watermark Remover</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <style>
         body { font-family: sans-serif; margin: 0; background: #f4f7f9; text-align: center; }
         header { background: #00b900; color: white; padding: 15px; font-weight: bold; }
         .container { padding: 20px; max-width: 500px; margin: auto; }
-        #canvas-wrapper { background: #eee; border-radius: 8px; margin-bottom: 15px; border: 2px solid #ccc; overflow: hidden; }
+        #canvas-wrapper { background: #eee; border-radius: 8px; margin-bottom: 15px; border: 2px solid #ccc; overflow: hidden; line-height: 0; }
         .controls { display: flex; flex-direction: column; gap: 10px; }
         button { padding: 15px; font-size: 16px; border-radius: 10px; border: none; cursor: pointer; font-weight: bold; }
         .btn-select { background: #333; color: white; }
         .btn-run { background: #ff4b4b; color: white; }
-        #status { margin: 15px 0; font-size: 14px; font-weight: bold; }
+        #status { margin: 15px 0; font-size: 14px; font-weight: bold; color: #555; }
         #result-area { display: none; margin-top: 20px; }
-        #result-area img { width: 100%; border-radius: 8px; border: 3px solid #00b900; }
+        #result-area img { width: 100%; border-radius: 8px; border: 3px solid #00b900; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
     </style>
 </head>
 <body>
 
-<header>AI ลบลายน้ำ</header>
+<header>AI ลบลายน้ำ (LINE App)</header>
 <div class="container">
     <div id="canvas-wrapper"><canvas id="mainCanvas"></canvas></div>
     <div class="controls">
@@ -30,31 +30,30 @@
         <button class="btn-select" onclick="document.getElementById('fileInput').click()">1. เลือกรูป</button>
         <button id="runBtn" class="btn-run" onclick="processAI()" disabled>2. ลบลายน้ำ</button>
     </div>
-    <div id="status">เลือกรูปภาพเพื่อเริ่ม</div>
-    <div id="result-area"><img id="outputImage" src=""></div>
+    <div id="status">กรุณาเลือกรูปภาพ</div>
+    <div id="result-area"><p>ผลลัพธ์:</p><img id="outputImage" src=""></div>
 </div>
 
 <script>
     let canvas;
-    const LIFF_ID = "2009596984-AW8MHMx7"; 
-    // ใช้ prompt เพื่อกัน GitHub ตรวจเจอ Token ในโค้ด
+    const LIFF_ID = "2009596984-AW8MHMx7"; // <--- ใส่ LIFF ID
     let HF_TOKEN = ""; 
 
     async function initLiff() {
-        await liff.init({ liffId: LIFF_ID });
-        if (!liff.isLoggedIn()) liff.login();
+        try { await liff.init({ liffId: LIFF_ID }); if (!liff.isLoggedIn()) liff.login(); } catch (e) {}
     }
     initLiff();
 
     canvas = new fabric.Canvas('mainCanvas');
-    canvas.freeDrawingBrush.width = 25;
+    canvas.freeDrawingBrush.width = 30;
     canvas.freeDrawingBrush.color = 'rgba(255, 0, 0, 0.5)';
 
     document.getElementById('fileInput').onchange = function(e) {
         const reader = new FileReader();
         reader.onload = function(f) {
             fabric.Image.fromURL(f.target.result, function(img) {
-                const scale = document.getElementById('canvas-wrapper').offsetWidth / img.width;
+                const wrapper = document.getElementById('canvas-wrapper');
+                const scale = wrapper.offsetWidth / img.width;
                 canvas.setDimensions({ width: img.width * scale, height: img.height * scale });
                 canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), { scaleX: scale, scaleY: scale });
                 canvas.isDrawingMode = true;
@@ -72,56 +71,51 @@
         }
 
         const status = document.getElementById('status');
-        status.innerText = "⏳ กำลังประมวลผล... (ขั้นตอนนี้ใช้เวลา)";
+        status.innerText = "⏳ กำลังประมวลผล (ประมาณ 30 วินาที)...";
         document.getElementById('runBtn').disabled = true;
 
         try {
-            // แปลง Canvas เป็น Blob (ไฟล์ภาพ) แทน Base64 เพื่อลด Error
-            const originalBlob = await new Promise(res => canvas.getElement().toBlob(res, 'image/jpeg', 0.9));
+            // ดึงรูปต้นฉบับ
+            const originalBase64 = canvas.toDataURL({ format: 'jpeg', quality: 0.8 }).split(',')[1];
             
-            // สร้าง Mask แบบ Blob
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
-            const tCtx = tempCanvas.getContext('2d');
-            tCtx.fillStyle = "black";
-            tCtx.fillRect(0,0, canvas.width, canvas.height);
-            
-            const tempFabric = new fabric.StaticCanvas(null, { width: canvas.width, height: canvas.height });
+            // สร้าง Mask
+            const tempCanvas = new fabric.StaticCanvas(null, { width: canvas.width, height: canvas.height });
+            tempCanvas.backgroundColor = 'black';
             canvas.getObjects().forEach(obj => {
                 const clone = fabric.util.object.clone(obj);
                 clone.set('stroke', 'white');
-                tempFabric.add(clone);
+                tempCanvas.add(clone);
             });
-            tempFabric.renderAll();
-            const maskBlob = await new Promise(res => tempFabric.getElement().toBlob(res, 'image/png'));
+            tempCanvas.renderAll();
+            const maskBase64 = tempCanvas.toDataURL({ format: 'png' }).split(',')[1];
 
-            // ใช้ FormData เพื่อส่งไฟล์คู่ (วิธีที่เสถียรที่สุดสำหรับ Inpainting)
-            const formData = new FormData();
-            formData.append("image", originalBlob);
-            formData.append("mask", maskBlob);
-
+            // ส่งไปโมเดลที่เสถียรกว่า (Lama)
             const response = await fetch("https://api-inference.huggingface.co/models/Sanster/Lama-Cleaner-Passed", {
-                headers: { "Authorization": `Bearer ${HF_TOKEN}` },
+                headers: { 
+                    "Authorization": `Bearer ${HF_TOKEN}`,
+                    "Content-Type": "application/json" 
+                },
                 method: "POST",
-                body: formData, // ส่งเป็น FormData
+                body: JSON.stringify({
+                    inputs: {
+                        image: originalBase64,
+                        mask: maskBase64
+                    }
+                }),
             });
 
             if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || "AI ไม่ตอบสนอง");
+                const error = await response.json();
+                if(error.error && error.error.includes("loading")) throw new Error("AI กำลังเตรียมตัว (Loading) กรุณารอ 20 วินาทีแล้วกดใหม่");
+                throw new Error("AI ไม่ตอบสนอง หรือ Token ผิด");
             }
 
             const resultBlob = await response.blob();
             document.getElementById('outputImage').src = URL.createObjectURL(resultBlob);
             document.getElementById('result-area').style.display = 'block';
             status.innerText = "✅ สำเร็จ!";
-            window.scrollTo(0, document.body.scrollHeight);
         } catch (err) {
-            console.error(err);
             status.innerText = "❌ " + err.message;
-            // ถ้าขึ้นว่า Model is loading ให้รอ 20 วินาทีแล้วกดใหม่
-            if(err.message.includes("loading")) status.innerText = "⏳ AI กำลังตื่น... รอ 20 วินาทีแล้วกดใหม่";
         }
         document.getElementById('runBtn').disabled = false;
     }
