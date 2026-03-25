@@ -2,101 +2,168 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AI Watermark Remover</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #f0f0f0; margin: 0; padding: 20px; }
-        #canvas-container { margin: 20px auto; border: 2px dashed #ccc; background: white; line-height: 0; }
-        .controls { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
-        button { padding: 12px 24px; font-size: 16px; border-radius: 8px; border: none; cursor: pointer; }
-        .btn-upload { background: #00b900; color: white; }
-        .btn-process { background: #ff4b4b; color: white; }
-        #loading { display: none; color: #666; }
-        img { max-width: 100%; margin-top: 20px; border-radius: 8px; }
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f7f9; display: flex; flex-direction: column; align-items: center; }
+        header { width: 100%; background: #00b900; color: white; padding: 15px 0; text-align: center; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .container { width: 95%; max-width: 500px; padding: 20px; box-sizing: border-box; }
+        
+        #canvas-wrapper { 
+            width: 100%; position: relative; background: #ddd; border-radius: 8px; overflow: hidden;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.1); margin-bottom: 20px; line-height: 0;
+        }
+
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+        button { 
+            padding: 15px; font-size: 16px; border: none; border-radius: 10px; cursor: pointer; 
+            font-weight: bold; transition: opacity 0.2s; 
+        }
+        .btn-select { background: #333; color: white; }
+        .btn-run { background: #ff4b4b; color: white; grid-column: span 2; }
+        .btn-clear { background: #ccc; color: #333; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #status { margin-top: 15px; color: #666; font-size: 14px; text-align: center; }
+        #result-area { margin-top: 20px; width: 100%; display: none; }
+        #result-area img { width: 100%; border-radius: 8px; border: 2px solid #00b900; }
+        
+        /* สไตล์วงกลมตามนิ้วที่ระบาย */
+        .canvas-container { margin: 0 auto; }
     </style>
 </head>
 <body>
 
-    <h2>ลบลายน้ำ AI ฟรี</h2>
-    
+<header>AI ลบลายน้ำ (LINE Mini App)</header>
+
+<div class="container">
+    <div id="canvas-wrapper">
+        <canvas id="mainCanvas"></canvas>
+    </div>
+
     <div class="controls">
         <input type="file" id="fileInput" accept="image/*" style="display:none">
-        <button class="btn-upload" onclick="document.getElementById('fileInput').click()">1. เลือกรูปภาพ</button>
-        <p style="font-size: 12px; color: #666;">*ระบายทับส่วนที่ต้องการลบ*</p>
+        <button class="btn-select" onclick="document.getElementById('fileInput').click()">เลือกรูป</button>
+        <button class="btn-clear" onclick="clearCanvas()">ล้างรอยวาด</button>
+        <button id="runBtn" class="btn-run" onclick="processAI()" disabled>เริ่มประมวลผลด้วย AI</button>
     </div>
 
-    <div id="canvas-container">
-        <canvas id="canvas"></canvas>
+    <div id="status">รอเลือกรูปภาพ...</div>
+
+    <div id="result-area">
+        <p><strong>ผลลัพธ์:</strong> (กดค้างที่รูปเพื่อบันทึก)</p>
+        <img id="outputImage" src="" alt="Result">
     </div>
+</div>
 
-    <div class="controls">
-        <button class="btn-process" onclick="processImage()">2. เริ่มลบลายน้ำ</button>
-        <div id="loading">กำลังประมวลผล... (อาจใช้เวลา 10-30 วินาที)</div>
-    </div>
+<script>
+    let canvas, originalImgObj;
 
-    <div id="result-container">
-        <h3>ผลลัพธ์:</h3>
-        <img id="resultImage" alt="รูปที่ลบแล้วจะโชว์ที่นี่">
-    </div>
-
-    <script>
-        let canvas = new fabric.Canvas('canvas', { isDrawingMode: true });
-        canvas.freeDrawingBrush.width = 20;
-        canvas.freeDrawingBrush.color = 'rgba(255,0,0,0.5)'; // สีแดงโปร่งแสงให้มองเห็นตอนระบาย
-
-        // 1. เชื่อมต่อ LINE LIFF
-        liff.init({ liffId: "ใส่_LIFF_ID_ของคุณ" }).then(() => {
-            if (!liff.isLoggedIn()) liff.login();
-        });
-
-        // 2. จัดการการอัปโหลดรูป
-        document.getElementById('fileInput').onchange = function(e) {
-            let reader = new FileReader();
-            reader.onload = function(event) {
-                fabric.Image.fromURL(event.target.result, function(img) {
-                    // ปรับขนาด Canvas ให้พอดีกับรูป
-                    const maxWidth = window.innerWidth - 40;
-                    const scale = maxWidth / img.width;
-                    img.set({ scaleX: scale, scaleY: scale });
-                    canvas.setWidth(img.width * scale);
-                    canvas.setHeight(img.height * scale);
-                    canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
-                });
-            };
-            reader.readAsDataURL(e.target.files[0]);
-        };
-
-        // 3. ส่งไปให้ AI (Hugging Face)
-        async function processImage() {
-            const loading = document.getElementById('loading');
-            loading.style.display = 'block';
-
-            // สร้าง Mask (ส่วนที่ระบายเป็นสีขาว พื้นหลังสีดำ)
-            canvas.backgroundImage = null;
-            canvas.getObjects().forEach(obj => obj.set('color', 'white'));
-            canvas.backgroundColor = 'black';
-            const maskBase64 = canvas.toDataURL();
-
-            // กลับมาโชว์รูปเดิมบนหน้าจอ (เพื่อให้ผู้ใช้ไม่ตกใจ)
-            // หมายเหตุ: ในขั้นตอนนี้ต้องส่งทั้งรูปจริงและ Mask ไปที่ API
-            // เนื่องจาก API ฟรีของ Hugging Face มีความซับซ้อนในการส่งไฟล์คู่ 
-            // แนะนำให้ใช้โมเดล 'Inpainting' ที่รับค่าผ่าน HTTP POST
-            
-            alert("ระบบกำลังเชื่อมต่อ AI... ขั้นตอนนี้ต้องใช้ API Token ของคุณ");
-            
-            // ตัวอย่าง Fetch ไปที่ Hugging Face (ต้องใส่ Token และ URL โมเดลจริง)
-            /*
-            const response = await fetch("https://api-inference.huggingface.co/models/runwayml/stable-diffusion-inpainting", {
-                headers: { Authorization: "Bearer ใส่_TOKEN_ของคุณ" },
-                method: "POST",
-                body: JSON.stringify({ inputs: originalImageBase64, mask: maskBase64 })
-            });
-            */
-            
-            loading.style.display = 'none';
+    // --- 1. เริ่มต้น LIFF ---
+    async function initLiff() {
+        try {
+            await liff.init({ liffId: "2009596984-AW8MHMx7" });
+            if (!liff.isLoggedIn()) {
+                liff.login();
+            }
+        } catch (err) {
+            console.error("LIFF Error", err);
         }
-    </script>
+    }
+    initLiff();
+
+    // --- 2. ตั้งค่า Canvas ---
+    canvas = new fabric.Canvas('mainCanvas', {
+        isDrawingMode: false,
+        width: 300,
+        height: 300
+    });
+    canvas.freeDrawingBrush.width = 25;
+    canvas.freeDrawingBrush.color = 'rgba(255, 192, 203, 0.7)'; // สีชมพูใสสำหรับระบาย
+
+    // --- 3. เมื่อเลือกไฟล์รูป ---
+    document.getElementById('fileInput').onchange = function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(f) {
+            fabric.Image.fromURL(f.target.result, function(img) {
+                const wrapper = document.getElementById('canvas-wrapper');
+                const maxWidth = wrapper.offsetWidth;
+                const scale = maxWidth / img.width;
+
+                img.set({ selectable: false, evented: false });
+                canvas.setDimensions({ width: img.width * scale, height: img.height * scale });
+                canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), {
+                    scaleX: scale,
+                    scaleY: scale
+                });
+                
+                originalImgObj = img;
+                canvas.isDrawingMode = true;
+                document.getElementById('runBtn').disabled = false;
+                document.getElementById('status').innerText = "ระบายทับลายน้ำ แล้วกดปุ่มสีแดง";
+            });
+        };
+        reader.readAsDataURL(file);
+    };
+
+    function clearCanvas() {
+        const bg = canvas.backgroundImage;
+        canvas.clear();
+        canvas.setBackgroundImage(bg, canvas.renderAll.bind(canvas));
+    }
+
+    // --- 4. ส่งไปประมวลผล AI ---
+    async function processAI() {
+        const status = document.getElementById('status');
+        const runBtn = document.getElementById('runBtn');
+        const token = "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"; 
+        
+        if (!token.startsWith("hf_")) {
+            alert("กรุณาใส่ Hugging Face Token ที่ถูกต้องในโค้ดก่อนครับ");
+            return;
+        }
+
+        status.innerText = "กำลังประมวลผล... อาจใช้เวลา 20-40 วินาที";
+        runBtn.disabled = true;
+
+        try {
+            // สร้างไฟล์ภาพต้นฉบับ
+            const originalBase64 = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
+            
+            // สร้าง Mask (ส่วนที่ระบายเป็นสีขาว พื้นหลังดำ)
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const ctx = tempCanvas.getContext('2d');
+            ctx.fillStyle = "black";
+            ctx.fillRect(0,0, tempCanvas.width, tempCanvas.height);
+            
+            // วาดเฉพาะรอยวาดลงไปเป็นสีขาว
+            const maskCanvas = new fabric.StaticCanvas(null, { width: canvas.width, height: canvas.height });
+            canvas.getObjects().forEach(obj => {
+                const clone = fabric.util.object.clone(obj);
+                clone.set('stroke', 'white');
+                maskCanvas.add(clone);
+            });
+            const maskBase64 = maskCanvas.toDataURL({ format: 'png' });
+
+            // หมายเหตุ: การ Fetch AI สำหรับ Inpainting ผ่าน API ฟรีมีข้อจำกัดเรื่องรูปแบบข้อมูล
+            // โค้ดส่วนนี้เป็นโครงสร้างตัวอย่างสำหรับการเชื่อมต่อ API จริง
+            alert("ระบบเตรียมข้อมูลพร้อมส่งไปที่ Hugging Face แล้ว! (คุณต้องตั้งค่า Endpoint เพิ่มเติมในส่วน API)");
+            
+            status.innerText = "เสร็จสิ้น (ตัวอย่างหน้าจอ)";
+            runBtn.disabled = false;
+        } catch (err) {
+            status.innerText = "เกิดข้อผิดพลาด: " + err.message;
+            runBtn.disabled = false;
+        }
+    }
+</script>
+
 </body>
 </html>
