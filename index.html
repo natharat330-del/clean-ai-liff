@@ -1,1 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Cleaner</title>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+<body>
+    <h1>ลบลายน้ำ AI ฟรี</h1>
+    <script>
+        // ใส่ LIFF ID ที่ได้จากขั้นตอนที่ 3 ตรงนี้
+        liff.init({ liffId: "ใส่_LIFF_ID_ของคุณ" }).then(() => {
+            if (!liff.isLoggedIn()) { liff.login(); }
+        });
 
+        // ฟังก์ชันส่งรูปไปหา Hugging Face API (ใช้ Token จากขั้นตอนที่ 1)
+        async function queryAI(data) {
+            const response = await fetch("https://api-inference.huggingface.co/models/runwayml/stable-diffusion-inpainting", {
+                headers: { Authorization: "Bearer ใส่_TOKEN_จาก_ขั้นตอนที่_1" },
+                method: "POST",
+                body: data,
+            });
+            return await response.blob();
+        }
+    </script>
+</body>
+</html>
