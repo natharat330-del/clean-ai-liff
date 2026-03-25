@@ -30,7 +30,7 @@
 <script>
     let canvas = new fabric.Canvas('c');
     let CLIPDROP_API_KEY = ""; 
-    const LIFF_ID = "2009596984-AW8MHMx7"; 
+    const LIFF_ID = "2009596984-AW8MHMx7"; // <--- อย่าลืมใส่ LIFF ID ของคุณ
 
     liff.init({ liffId: LIFF_ID });
 
@@ -53,12 +53,12 @@
 
     async function run() {
         if(!CLIPDROP_API_KEY) {
-            CLIPDROP_API_KEY = prompt("วาง Clipdrop API Key ของคุณที่นี่:");
+            CLIPDROP_API_KEY = prompt("วาง Clipdrop API Key ของคุณที่นี่:"); //
             if(!CLIPDROP_API_KEY) return;
         }
 
         let st = document.getElementById('status');
-        st.innerText = "⏳ AI กำลังลบวัตถุ... (ใช้เวลาประมาณ 5-10 วินาที)";
+        st.innerText = "⏳ AI กำลังทำงาน... (ประมาณ 5-10 วินาที)";
         document.getElementById('go').disabled = true;
 
         try {
@@ -82,7 +82,7 @@
             tempFabric.renderAll();
             const maskBlob = await new Promise(res => tempFabric.getElement().toBlob(res, 'image/png'));
 
-            // 3. ส่งไป Clipdrop Cleanup API
+            // 3. ส่งข้อมูลไปที่ Clipdrop Cleanup API
             const formData = new FormData();
             formData.append('image_file', imageBlob);
             formData.append('mask_file', maskBlob);
@@ -93,12 +93,12 @@
                 body: formData
             });
 
-            if (!response.ok) throw new Error("API Error: ตรวจสอบ Key หรือโควตาของคุณ");
+            if (!response.ok) throw new Error("API Error: ตรวจสอบ Key หรือเครดิตของคุณ");
 
             const resultBlob = await response.blob();
             document.getElementById('res').src = URL.createObjectURL(resultBlob);
             document.getElementById('res').style.display = 'block';
-            st.innerText = "✅ เสร็จเรียบร้อย!";
+            st.innerText = "✅ ลบเสร็จเรียบร้อย!";
             st.style.color = "#28a745";
         } catch (e) {
             st.innerText = "❌ " + e.message;
