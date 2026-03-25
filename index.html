@@ -7,75 +7,86 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f0f2f5; }
-        #canvas-box { background: #fff; border: 2px solid #ddd; margin-bottom: 15px; line-height: 0; }
+        body { font-family: sans-serif; text-align: center; margin: 0; padding: 10px; background: #f0f2f5; }
+        #box { background: #fff; border: 2px solid #ddd; margin-bottom: 10px; line-height: 0; max-width: 100%; overflow: hidden; }
         button { width: 100%; padding: 15px; margin: 5px 0; border-radius: 10px; border: none; font-weight: bold; font-size: 16px; cursor: pointer; }
-        .btn-upload { background: #00b900; color: #fff; }
+        .btn-upload { background: #333; color: #fff; }
         .btn-run { background: #ff4b4b; color: #fff; }
-        #status { color: #555; margin: 10px; font-size: 14px; }
-        img { width: 100%; margin-top: 20px; border-radius: 10px; display: none; }
+        #status { color: #ff4b4b; margin: 10px; font-size: 14px; font-weight: bold; }
+        img { width: 100%; margin-top: 15px; border: 3px solid #00b900; border-radius: 10px; display: none; }
     </style>
 </head>
 <body>
-    <h3>AI ลบลายน้ำ</h3>
-    <div id="canvas-box"><canvas id="c"></canvas></div>
+    <h3>AI ลบลายน้ำ (V.ชัวร์ที่สุด)</h3>
+    <div id="box"><canvas id="c"></canvas></div>
     <input type="file" id="f" accept="image/*" style="display:none">
     <button class="btn-upload" onclick="document.getElementById('f').click()">1. เลือกรูป</button>
     <button id="go" class="btn-run" onclick="run()" disabled>2. ลบลายน้ำ</button>
-    <div id="status">รอเลือกรูป...</div>
+    <div id="status">เลือกรูปภาพแล้วระบายจุดที่ต้องการลบ</div>
     <img id="res">
 
 <script>
     let canvas = new fabric.Canvas('c');
     let HF_TOKEN = "";
+    // ใส่ LIFF ID ของคุณที่นี่
     const LIFF_ID = "2009596984-AW8MHMx7"; 
 
-    liff.init({ liffId: LIFF_ID }).then(() => { if(!liff.isLoggedIn()) liff.login(); });
+    liff.init({ liffId: LIFF_ID }).catch(err => console.error(err));
 
     document.getElementById('f').onchange = function(e) {
         let r = new FileReader();
         r.onload = function(ex) {
             fabric.Image.fromURL(ex.target.result, function(img) {
-                let s = (window.innerWidth - 40) / img.width;
+                let s = (window.innerWidth - 30) / img.width;
                 canvas.setDimensions({ width: img.width * s, height: img.height * s });
                 canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), { scaleX: s, scaleY: s });
                 canvas.isDrawingMode = true;
-                canvas.freeDrawingBrush.width = 30;
+                canvas.freeDrawingBrush.width = 35;
                 canvas.freeDrawingBrush.color = 'rgba(255,0,0,0.5)';
                 document.getElementById('go').disabled = false;
-                document.getElementById('status').innerText = "ระบายทับรอยแล้วกดปุ่มแดง";
+                document.getElementById('status').innerText = "ระบายสีแดงทับลายน้ำแล้วกดปุ่มแดง";
             });
         };
         r.readAsDataURL(e.target.files[0]);
     };
 
     async function run() {
-        if(!HF_TOKEN) HF_TOKEN = prompt("วาง Token hf_... ของคุณ:");
+        if(!HF_TOKEN) HF_TOKEN = prompt("วาง Token hf_... อันใหม่ของคุณ:");
         if(!HF_TOKEN) return;
 
         let st = document.getElementById('status');
-        st.innerText = "⏳ กำลังประมวลผล... (อาจรอ 30 วินาที)";
+        st.innerText = "⏳ AI กำลังทำงาน... (อาจใช้เวลาถึง 1 นาทีในครั้งแรก)";
+        document.getElementById('go').disabled = true;
         
         try {
-            // สร้างรูปต้นฉบับ Blob
-            const imgBlob = await new Promise(res => canvas.getElement().toBlob(res, 'image/jpeg'));
+            // ดึงไฟล์รูปภาพดิบจาก Canvas
+            const imgBlob = await new Promise(res => canvas.getElement().toBlob(res, 'image/jpeg', 0.8));
             
-            // ส่งไป Hugging Face แบบ Binary
-            const resp = await fetch("https://api-inference.huggingface.co/models/ghoskno/Coloring_Inpaint", {
+            // เปลี่ยนไปใช้โมเดลที่รับภาพเดี่ยวแล้วลบส่วนที่ผิดปกติ (Image-to-Image)
+            // ตัวนี้เป็นโมเดลสำหรับลบสิ่งแปลกปลอมที่เสถียรกว่าในตอนนี้
+            const resp = await fetch("https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-inpainting", {
                 headers: { "Authorization": "Bearer " + HF_TOKEN },
                 method: "POST",
                 body: imgBlob
             });
 
-            if(!resp.ok) throw new Error("AI ติดคิว หรือ Token ผิด ลองกดใหม่");
+            if(!resp.ok) {
+                const errorLog = await resp.json();
+                if(errorLog.error && errorLog.error.includes("loading")) {
+                    throw new Error("AI กำลังอุ่นเครื่อง... รอ 20 วินาทีแล้วกดใหม่ครับ");
+                }
+                throw new Error("AI ไม่ว่าง หรือใส่ Token ผิด");
+            }
 
             const out = await resp.blob();
             document.getElementById('res').src = URL.createObjectURL(out);
             document.getElementById('res').style.display = 'block';
-            st.innerText = "✅ เสร็จแล้ว!";
+            st.innerText = "✅ ลบเสร็จแล้ว!";
+            st.style.color = "#00b900";
         } catch (e) {
-            st.innerText = "❌ Error: " + e.message;
+            st.innerText = "❌ " + e.message;
         }
+        document.getElementById('go').disabled = false;
     }
 </script>
 </body>
